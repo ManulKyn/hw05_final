@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %} {{ profile.get_full_name }}{% endblock %}
+{% block content %}
+    {% load user_filters %}
+    <main role="main" class="container">
+        <div class="row">
+            {% include 'author_info.html' with post=post %}
+            <div class="col-md-9">
+                <div class="card mb-3 mt-1 shadow-sm">
+                    {% include "post_item.html" with post=post %}
+                </div>
+                {% include 'comments.html' %}
+             </div>
+        </div>
+</main>
+{% endblock %}
