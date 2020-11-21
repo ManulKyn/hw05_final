@@ -24,25 +24,17 @@ class PostsTest(TestCase):
             description='test_group'
         )
 
-
     def test_profile(self):
         self.client.force_login(self.user)
         response = self.client.get(reverse(
             'profile', 
-            kwargs={"username": self.user.username}
+            args=[self.user.username]
         ))
         self.assertEqual(response.status_code, 200)
 
-
     def test_authorized_user_newpost_page(self):
-        self.client.post(
-            reverse('new_post'), 
-            {'text': 'Текст поста', 'group': self.group},
-            follow=True
-            )
         response = self.client.get(reverse('new_post'), follow=True)
         self.assertEqual(response.status_code, 200)
-
 
     def test_unauthorized_user_newpost_page(self):
         response = self.client.get(reverse('new_post')) 
@@ -52,7 +44,6 @@ class PostsTest(TestCase):
             status_code=302,  
             target_status_code=200 
         ) 
-
 
     def test_new_post(self):
         self.client.force_login(self.user)
@@ -72,7 +63,6 @@ class PostsTest(TestCase):
         self.assertEqual(result.text, data['text'])
         self.assertEqual(result.author.username, self.user.username)
         self.assertEqual(result.group, self.group) 
-
 
     def test_edit_post(self):
         self.client.force_login(self.user)
@@ -106,7 +96,6 @@ class PostsTest(TestCase):
         self.post_group = Post.objects.get(id=self.post.id).group
         self.assertEqual(self.post_group, self.edit_group)
        
-
     def test_show_post(self): 
         self.client.force_login(self.user)
         self.post = Post.objects.create(
@@ -133,11 +122,9 @@ class PostsTest(TestCase):
                 self.assertEqual(result.group.id,  self.group.id) 
                 self.assertEqual(result.author.username, self.user.username) 
 
-    
     def test_show_404(self):
         response = self.client.get('/no_existing_page/')
         self.assertEquals(response.status_code, 404)
-
 
     def test_follow_unfollow(self):
         self.follower = User.objects.create_user(
@@ -151,12 +138,93 @@ class PostsTest(TestCase):
             password='testpass2'
         )
         self.client.force_login(self.follower)
-        self.post = Post.objects.create(text='Test subscribe', author=self.following)
-        response = self.client.get(reverse('profile_follow',args=[self.following.username]))
-        self.assertRedirects(response, reverse('profile', args=[self.following.username]), status_code=302)
+        #self.post = Post.objects.create(text='Test subscribe', author=self.following) 
+        response = self.client.get(
+            reverse(
+                'profile_follow',
+                args=[self.following.username])
+        )
+        self.assertRedirects(
+            response, 
+            reverse(
+                'profile', 
+                args=[self.following.username]), 
+            status_code=302
+        )
         response = Follow.objects.filter(user=self.follower).exists()
         self.assertTrue(response)
-        response = self.client.get(reverse('profile_unfollow',args=[self.following.username]))
-        self.assertRedirects(response, reverse('profile', args=[self.following.username]), status_code=302)
+        response = self.client.get(
+            reverse(
+                'profile_unfollow',
+                args=[self.following.username])
+        )
+        self.assertRedirects(
+            response, 
+            reverse(
+                'profile', 
+                args=[self.following.username]), 
+            status_code=302
+        )
         response = Follow.objects.filter(user=self.follower).exists()
         self.assertFalse(response)
+
+    def test_post_on_follow_page(self):
+        self.text = 'Test follow page'
+        self.follower = User.objects.create_user(
+            username='testfollower',
+            email='testfollower@test.ru',
+            password='testpass1'
+        )
+        self.following = User.objects.create_user(
+            username='testfollowing',
+            email='testfollowing@test.ru',
+            password='testpass2'
+        )
+        self.unfollower = User.objects.create_user(
+            username='testunfollower',
+            email='testunfollower@test.ru',
+            password='testpass3'
+        )
+        self.client.force_login(self.follower)
+        self.client.get(
+            reverse(
+                'profile_follow',
+                args=[self.following.username])
+        )
+        self.post = Post.objects.create(text=self.text, author=self.following)
+        response = self.client.get(reverse('follow_index'))
+        self.assertContains(response, self.text, status_code=200, html=False)
+        self.client.logout()
+        self.client.force_login(self.unfollower)
+        response = self.client.get(reverse('follow_index'))
+        self.assertNotContains(response, self.text, html=False,)
+
+    def test_comments(self):
+        self.follower = User.objects.create_user(
+            username='testfollower',
+            email='testfollower@test.ru',
+            password='testpass1'
+        )
+        self.following = User.objects.create_user(
+            username='testfollowing',
+            email='testfollowing@test.ru',
+            password='testpass2'
+        )
+        self.text = 'Test comments'
+        self.post = Post.objects.create(text='Test post', author=self.following)
+        response = self.client.post(
+            reverse(
+                'add_comment', 
+                args=[self.following.username, self.post.id]), 
+            {'text': 'Error text'}
+        )
+        self.assertRedirects(
+            response, 
+            f'/auth/login/?next=/{self.following}/{self.post.pk}/comment/', 
+            status_code=302
+        )
+        self.client.force_login(self.follower)
+        response = self.client.post(reverse('add_comment', args=[self.following.username, self.post.id]), {'text': self.text})
+        self.assertEqual(response.status_code, 302)
+        response = self.client.get(f'/{self.following}/{self.post.pk}/')
+        self.assertContains(response, self.text, status_code=200, html=False,)

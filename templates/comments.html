@@ -16,7 +16,7 @@
         </form>
     </div>
 {% else %}
-        Вы должны быть авторизованны, что бы оставить комментарий
+    Только зарегистрированные пользователи могут оставлять комментарии
 {% endif %}
 
 {% for comment in comments %}
@@ -28,7 +28,7 @@
         <div class="card-body">
             <form>
                 <div class="form-group">
-                    {{ comment.text }}
+                    {{ comment.text | linebreaksbr }}
                 </div>
             </form>
         </div>

@@ -5,15 +5,15 @@
 <main role="main" class="container">
     {% include "menu.html" %}
     <div class="table">
-    <h1>{{ group.title }}</h1>
-    <p>{{ group.description }}</p>
-    {% for post in page %}
-        {% include "post_item.html" with post=post %}
-    {% endfor %}
+        <h1>{{ group.title }}</h1>
+        <p>{{ group.description }}</p>
+        {% for post in page %}
+            {% include "post_item.html" with post=post group_none=True%}
+        {% endfor %}
 
-    {% if page.has_other_pages %}
-        {% include "paginator.html" with items=page paginator=paginator%}
-    {% endif %}
+        {% if page.has_other_pages %}
+            {% include "paginator.html" with items=page paginator=paginator%}
+        {% endif %}
     </div>
 </main>
 {% endblock %}
