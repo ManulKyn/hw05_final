@@ -75,8 +75,7 @@ def post_view(request, username, post_id):
     else:
         following = False
     form = CommentForm()
-    #comments = post.comment.all
-    comments = Comment.objects.filter(post=post_id)
+    comments = post.comment.all()
     author = post.author
     return render(request, 'post.html', {
         'profile': profile,
