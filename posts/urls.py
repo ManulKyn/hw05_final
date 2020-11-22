@@ -18,12 +18,14 @@ urlpatterns = [
     path('<str:username>/', 
          views.profile, 
          name='profile'),
+         
      path('<username>/follow/', 
           views.profile_follow, 
           name='profile_follow'),
      path('<username>/unfollow/', 
           views.profile_unfollow, 
           name='profile_unfollow'),
+
     path('<str:username>/<int:post_id>/', 
          views.post_view, 
          name='post'),

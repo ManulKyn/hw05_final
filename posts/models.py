@@ -52,7 +52,7 @@ class Post(models.Model):
         )
 
     def __str__(self):
-       return self.text
+       return f"{self.author}, {self.text[:20]}..."
 
 
 class Comment(models.Model):
@@ -73,8 +73,13 @@ class Comment(models.Model):
         db_index=True
     )
 
+    class Meta:
+        ordering = (
+            "-created",
+        )
+
     def __str__(self):
-        return self.text
+        return self.text[:20]
 
 class Follow(models.Model):
     user = models.ForeignKey(

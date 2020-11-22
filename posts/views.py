@@ -50,7 +50,7 @@ def new_post(request):
 def profile(request, username):
     author = get_object_or_404(User, username=username)
     posts_profile = author.posts.all()
-    if Follow.objects.filter(user=request.user, author=author).exists():
+    if Follow.objects.filter(user=request.user.id, author=author).exists():
         following = True
     else:
         following = False
@@ -70,12 +70,13 @@ def post_view(request, username, post_id):
     profile = get_object_or_404(User, username=username)
     post = get_object_or_404(Post,  pk=post_id)
     following = False
-    if Follow.objects.filter(user=request.user, author=profile).exists():
+    if Follow.objects.filter(user=request.user.id, author=profile).exists():
         following = True
     else:
         following = False
     form = CommentForm()
-    comments = post.comment.all
+    #comments = post.comment.all
+    comments = Comment.objects.filter(post=post_id)
     author = post.author
     return render(request, 'post.html', {
         'profile': profile,
@@ -116,7 +117,7 @@ def add_comment(request, username, post_id):
     comment.author = request.user
     comment.post = post
     comment.save()
-    return redirect('post', username=username, post_id=post_id)
+    return redirect('post', username=post.author, post_id=post_id)
 
 
 @login_required
