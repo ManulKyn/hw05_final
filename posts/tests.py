@@ -3,6 +3,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client
 from django.shortcuts import reverse
+from django.core.cache.utils import make_template_fragment_key
 
 from posts.models import Post, Group, Follow
 
@@ -126,50 +127,16 @@ class PostsTest(TestCase):
         response = self.client.get('/no_existing_page/')
         self.assertEquals(response.status_code, 404)
 
-    def test_follow_unfollow(self):
-        self.follower = User.objects.create_user(
-            username='testfollower',
-            email='testfollower@test.ru',
-            password='testpass1'
-        )
-        self.following = User.objects.create_user(
-            username='testfollowing',
-            email='testfollowing@test.ru',
-            password='testpass2'
-        )
-        self.client.force_login(self.follower)
-        #self.post = Post.objects.create(text='Test subscribe', author=self.following) 
-        response = self.client.get(
-            reverse(
-                'profile_follow',
-                args=[self.following.username])
-        )
-        self.assertRedirects(
-            response, 
-            reverse(
-                'profile', 
-                args=[self.following.username]), 
-            status_code=302
-        )
-        response = Follow.objects.filter(user=self.follower).exists()
-        self.assertTrue(response)
-        response = self.client.get(
-            reverse(
-                'profile_unfollow',
-                args=[self.following.username])
-        )
-        self.assertRedirects(
-            response, 
-            reverse(
-                'profile', 
-                args=[self.following.username]), 
-            status_code=302
-        )
-        response = Follow.objects.filter(user=self.follower).exists()
-        self.assertFalse(response)
 
-    def test_post_on_follow_page(self):
-        self.text = 'Test follow page'
+class SPRINT6_Test(TestCase):
+    def setUp(self):
+        #cache.clear()
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='test_user',
+            email='test_user@test.ru',
+            password='12345'
+        )
         self.follower = User.objects.create_user(
             username='testfollower',
             email='testfollower@test.ru',
@@ -180,38 +147,148 @@ class PostsTest(TestCase):
             email='testfollowing@test.ru',
             password='testpass2'
         )
-        self.unfollower = User.objects.create_user(
-            username='testunfollower',
-            email='testunfollower@test.ru',
-            password='testpass3'
+        self.group = Group.objects.create(
+            title='test',
+            slug='test',
+            description='test_group'
         )
+        self.post = Post.objects.create(
+            text='TEST_POST', 
+            author=self.following
+        )
+        self.key = make_template_fragment_key('index_page')
+        
+    def test_post_view_image(self):
+        self.client.force_login(self.user)
+        small_gif= (
+            b"\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04"
+            b"\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02"
+            b"\x02\x4c\x01\x00\x3b"
+        )
+        img = SimpleUploadedFile(
+            "small.gif",
+            small_gif,
+            content_type="image/gif"
+        )
+        post = Post.objects.create(
+            text='Test post with img', 
+            author=self.user,
+            group= self.group,
+            image= img
+        )
+        response=self.client.post(reverse(
+            'post', 
+             kwargs={
+                    'username': post.author,
+                    'post_id': post.id,}
+        ))
+        self.assertContains(response, '<img', status_code=200)
+
+    def test_profile_image(self):
+        self.client.force_login(self.user)
+        small_gif= (
+            b"\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04"
+            b"\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02"
+            b"\x02\x4c\x01\x00\x3b"
+        )
+        img = SimpleUploadedFile(
+            "small.gif",
+            small_gif,
+            content_type="image/gif"
+        )
+        post = Post.objects.create(
+            text='Test post with img', 
+            author=self.user,
+            group= self.group,
+            image= img
+        )
+        response = self.client.post(reverse(
+            'profile', 
+            kwargs={'username': post.author}
+        ))
+        self.assertContains(response, '<img')
+
+
+    def test_cache(self):
+        cache.clear()
+        self.client.force_login(self.user)
+        first_response=self.client.get(reverse('index'))
+        group = Group.objects.create(
+            title='testers',
+            slug='testers',
+            description='test_group'
+        )
+        group.save()
+        post = Post.objects.create(
+            text='Test post', 
+            author=self.user,
+            group= self.group
+        )
+        second_response=self.client.get(reverse('index'))
+        self.assertEqual(first_response.context, second_response.context)
+        cache.touch(self.key, 0)
+        third_response=self.client.get(reverse('index'))
+        self.assertNotEqual(second_response.context, third_response.context)
+
+    def test_follow(self):
         self.client.force_login(self.follower)
-        self.client.get(
-            reverse(
-                'profile_follow',
-                args=[self.following.username])
+        url_profile = reverse(
+            'profile',
+            kwargs={'username': self.following.username}
         )
-        self.post = Post.objects.create(text=self.text, author=self.following)
-        response = self.client.get(reverse('follow_index'))
-        self.assertContains(response, self.text, status_code=200, html=False)
-        self.client.logout()
-        self.client.force_login(self.unfollower)
-        response = self.client.get(reverse('follow_index'))
-        self.assertNotContains(response, self.text, html=False,)
+        response_profile = self.client.get(url_profile)
+        self.assertContains(response_profile, 'Подписаться')
+
+    def test_double_follow(self):
+        self.client.force_login(self.follower)
+        url_profile_follow = reverse(
+            'profile_follow',
+            kwargs={'username': self.following.username}
+        )
+        self.client.get(url_profile_follow, follow=True)
+        self.assertEqual(Follow.objects.all().count(), 1)
+        self.client.get(url_profile_follow, follow=True)
+        self.assertEqual(Follow.objects.all().count(), 1)
+
+    def test_self_follow(self):
+        self.client.force_login(self.follower)
+        url_profile_follow = reverse(
+            'profile_follow',
+            kwargs={'username': self.follower.username}
+        )
+        self.assertEqual(Follow.objects.all().count(), 0)
+        self.client.get(url_profile_follow, follow=True)
+        self.assertEqual(Follow.objects.all().count(), 0)
+
+    def test_unfollow(self):
+        self.client.force_login(self.follower)
+        Follow.objects.create(user_id=self.follower.id, author_id=self.following.id)
+        self.assertEqual(Follow.objects.all().count(), 1)
+        url_profile = reverse(
+            'profile',
+            kwargs={'username': self.following.username}
+        )
+        response_profile = self.client.get(url_profile, follow=True)
+        self.assertContains(response_profile, 'Отписаться')
+
+    def test_follow_index(self):
+        self.client.force_login(self.follower)
+        url_follow_index = reverse('follow_index')
+        response_profile = self.client.get(url_follow_index)
+        self.assertNotContains(response_profile, 'TEST_POST')
+
+        Follow.objects.create(user_id=self.follower.id, author_id=self.following.id)
+
+        response_profile = self.client.get(url_follow_index)
+        self.assertContains(response_profile, 'TEST_POST')
 
     def test_comments(self):
-        self.follower = User.objects.create_user(
-            username='testfollower',
-            email='testfollower@test.ru',
-            password='testpass1'
-        )
-        self.following = User.objects.create_user(
-            username='testfollowing',
-            email='testfollowing@test.ru',
-            password='testpass2'
-        )
+
         self.text = 'Test comments'
-        self.post = Post.objects.create(text='Test post', author=self.following)
+        self.post = Post.objects.create(
+            text='Test post', 
+            author=self.following
+        )
         response = self.client.post(
             reverse(
                 'add_comment', 
@@ -224,7 +301,18 @@ class PostsTest(TestCase):
             status_code=302
         )
         self.client.force_login(self.follower)
-        response = self.client.post(reverse('add_comment', args=[self.following.username, self.post.id]), {'text': self.text})
+        response = self.client.post(
+            reverse(
+                'add_comment', 
+                args=[self.following.username, self.post.id]
+            ), 
+            {'text': self.text}
+        )
         self.assertEqual(response.status_code, 302)
-        response = self.client.get(f'/{self.following}/{self.post.pk}/')
+        response = self.client.get(
+            reverse(
+                'post', 
+                args=[self.following.username, self.post.id]
+            )
+        )
         self.assertContains(response, self.text, status_code=200, html=False,)
