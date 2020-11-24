@@ -11,7 +11,7 @@
                     {% if post %} Редактирование записи {% else %} Опубликуйте новую запись {% endif %}
                 </div>
                 <div class="card-body">
-                    <form method="post">
+                    <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         {% for field in form %}
                             <h1>{% block header %}{% endblock %}</h1>

@@ -13,21 +13,16 @@
         <p class="card-text">
             {{ post.text|linebreaksbr }}
         </p>
-        {% if group_none == True %}
-            
-        {% elif post.group %}
+        {% if group_none != True and post.group%}
                 <a class="card-link muted" href="{% url 'group_posts' post.group.slug %}">
-                    <strong class="d-block text-gray-dark">#{{ post.group.slug }}</strong>
+                    <strong class="d-block text-gray-dark">#{{ post.group.title }}</strong>
                 </a>
         {% endif %}
         <div class="d-flex justify-content-between align-items-center">
             <div class="btn-group ">
+                <a class="btn btn-sm text-muted">{{ post.comments.count }} комментариев</a>
                 <a class="btn btn-sm text-muted" href="{% url 'add_comment' post.author.username post.id %}" role="button">
-                    {% if post.comment.count %}
-                        {{ post.comment.count }} комментариев
-                    {% else%}
                         Добавить комментарий
-                    {% endif %}
                 </a>
                 {% if user == post.author %}
                     <a class="btn btn-sm text-muted" href="{% url 'post_edit' post.author.username post.id %}" role="button">

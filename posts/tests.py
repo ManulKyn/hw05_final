@@ -1,11 +1,14 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
+from django.core.files.images import ImageFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client
 from django.shortcuts import reverse
-from django.core.cache.utils import make_template_fragment_key
 
 from posts.models import Post, Group, Follow
+
+import tempfile
 
 User = get_user_model()
 
@@ -128,9 +131,9 @@ class PostsTest(TestCase):
         self.assertEquals(response.status_code, 404)
 
 
-class SPRINT6_Test(TestCase):
+class SprintSixTest(TestCase):
     def setUp(self):
-        #cache.clear()
+        cache.clear()
         self.client = Client()
         self.user = User.objects.create_user(
             username='test_user',
@@ -152,13 +155,8 @@ class SPRINT6_Test(TestCase):
             slug='test',
             description='test_group'
         )
-        self.post = Post.objects.create(
-            text='TEST_POST', 
-            author=self.following
-        )
-        self.key = make_template_fragment_key('index_page')
         
-    def test_post_view_image(self):
+    def test_image(self):
         self.client.force_login(self.user)
         small_gif= (
             b"\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04"
@@ -176,68 +174,66 @@ class SPRINT6_Test(TestCase):
             group= self.group,
             image= img
         )
-        response=self.client.post(reverse(
-            'post', 
-             kwargs={
-                    'username': post.author,
-                    'post_id': post.id,}
-        ))
-        self.assertContains(response, '<img', status_code=200)
+        urls = ( 
+            reverse('index'), 
+            reverse('profile', args=[post.author.username]),  
+            reverse('post',  args=[post.author.username, post.pk]), 
+            reverse('group_posts', args=[self.group.slug]), 
+        )
+        for url in urls: 
+             
+            with self.subTest(url=url): 
+                response = self.client.get(url) 
+                paginator = response.context.get('paginator')  
+                if paginator is not None:  
+                    post = response.context['page'][0]
+                else:
+                    post = response.context['post'] 
+                self.assertContains(response, '<img', status_code=200)
 
-    def test_profile_image(self):
+    def test_no_image(self):
         self.client.force_login(self.user)
-        small_gif= (
-            b"\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04"
-            b"\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02"
-            b"\x02\x4c\x01\x00\x3b"
+        fake_img = tempfile.NamedTemporaryFile()
+        response = self.client.post(
+            reverse('new_post'), 
+            {'text': 'post with no imag',
+                'author': self.user,
+                'group': self.group, 
+                'image': fake_img
+            }
         )
-        img = SimpleUploadedFile(
-            "small.gif",
-            small_gif,
-            content_type="image/gif"
-        )
-        post = Post.objects.create(
-            text='Test post with img', 
-            author=self.user,
-            group= self.group,
-            image= img
-        )
-        response = self.client.post(reverse(
-            'profile', 
-            kwargs={'username': post.author}
-        ))
-        self.assertContains(response, '<img')
-
+        self.assertFormError(response, 'form', 'image', 'Отправленный файл пуст.')
 
     def test_cache(self):
-        cache.clear()
         self.client.force_login(self.user)
-        first_response=self.client.get(reverse('index'))
-        group = Group.objects.create(
-            title='testers',
-            slug='testers',
-            description='test_group'
+        self.client.get(reverse('index'))
+        post_cache = Post.objects.create(
+            text='Post to check cache', 
+            group=self.group,
+            author=self.user
         )
-        group.save()
-        post = Post.objects.create(
-            text='Test post', 
-            author=self.user,
-            group= self.group
-        )
-        second_response=self.client.get(reverse('index'))
-        self.assertEqual(first_response.context, second_response.context)
-        cache.touch(self.key, 0)
-        third_response=self.client.get(reverse('index'))
-        self.assertNotEqual(second_response.context, third_response.context)
+        response = self.client.get(reverse('index'))
+        self.assertNotContains(response, post_cache.text)
+        key = make_template_fragment_key('index_page')
+        cache.delete(key)
+        response = self.client.get(reverse('index'))
+        self.assertContains(response, post_cache.text)
 
     def test_follow(self):
         self.client.force_login(self.follower)
-        url_profile = reverse(
-            'profile',
-            kwargs={'username': self.following.username}
+        Follow.objects.create(
+            user=self.follower,
+            author=self.following
         )
-        response_profile = self.client.get(url_profile)
-        self.assertContains(response_profile, 'Подписаться')
+        post = Post.objects.create(
+            text='Post for follow',
+            author=self.following,
+            group=self.group
+        )
+        post.save()
+        response = self.client.get(reverse('follow_index'))
+        self.assertContains(response, post.text)
+        self.assertContains(response, post.author.username)
 
     def test_double_follow(self):
         self.client.force_login(self.follower)
@@ -247,7 +243,11 @@ class SPRINT6_Test(TestCase):
         )
         self.client.get(url_profile_follow, follow=True)
         self.assertEqual(Follow.objects.all().count(), 1)
-        self.client.get(url_profile_follow, follow=True)
+        follower=Follow.objects.get().user
+        following=Follow.objects.get().author
+        self.assertEqual(follower, self.follower)
+        self.assertEqual(following, self.following)
+        self.client.get(url_profile_follow, follow=True) 
         self.assertEqual(Follow.objects.all().count(), 1)
 
     def test_self_follow(self):
@@ -262,17 +262,26 @@ class SPRINT6_Test(TestCase):
 
     def test_unfollow(self):
         self.client.force_login(self.follower)
-        Follow.objects.create(user_id=self.follower.id, author_id=self.following.id)
-        self.assertEqual(Follow.objects.all().count(), 1)
-        url_profile = reverse(
-            'profile',
-            kwargs={'username': self.following.username}
+        follow = Follow.objects.create(
+            user=self.follower,
+            author=self.following
         )
-        response_profile = self.client.get(url_profile, follow=True)
-        self.assertContains(response_profile, 'Отписаться')
+        post = Post.objects.create(
+            text='Post for unfollow',
+            author=self.following,
+            group=self.group
+        )
+        post.save()
+        follow.delete()
+        response = self.client.get(reverse('follow_index'))
+        self.assertNotContains(response, post.text)
 
     def test_follow_index(self):
         self.client.force_login(self.follower)
+        self.post = Post.objects.create(
+            text='TEST_POST', 
+            author=self.following
+        )
         url_follow_index = reverse('follow_index')
         response_profile = self.client.get(url_follow_index)
         self.assertNotContains(response_profile, 'TEST_POST')
@@ -283,7 +292,6 @@ class SPRINT6_Test(TestCase):
         self.assertContains(response_profile, 'TEST_POST')
 
     def test_comments(self):
-
         self.text = 'Test comments'
         self.post = Post.objects.create(
             text='Test post', 
