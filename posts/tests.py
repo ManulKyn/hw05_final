@@ -6,7 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client
 from django.shortcuts import reverse
 
-from posts.models import Post, Group, Follow
+from posts.models import Post, Group, Follow, Comment
 
 import tempfile
 
@@ -291,36 +291,46 @@ class SprintSixTest(TestCase):
         response_profile = self.client.get(url_follow_index)
         self.assertContains(response_profile, 'TEST_POST')
 
-    def test_comments(self):
+    def test_unauth_comments(self):
         self.text = 'Test comments'
-        self.post = Post.objects.create(
-            text='Test post', 
-            author=self.following
+        post = Post.objects.create(
+            text=self.text, 
+            group=self.group,
+            author=self.user
         )
-        response = self.client.post(
+        self.client.post(
             reverse(
-                'add_comment', 
-                args=[self.following.username, self.post.id]), 
-            {'text': 'Error text'}
+                "add_comment", 
+                kwargs={ 
+                    'username': self.user.username,
+                    'post_id': post.id 
+                }), 
+            {'text': 'Comment',
+            'post': post.id,
+            'author': self.user.id})
+        self.assertEqual(Comment.objects.count(), 0)
+
+    def test_auth_comments(self):
+        self.text = 'Test comments'
+        self.client.force_login(self.user)
+        post = Post.objects.create(
+            text=self.text, 
+            group=self.group,
+            author=self.user
         )
-        self.assertRedirects(
-            response, 
-            f'/auth/login/?next=/{self.following}/{self.post.pk}/comment/', 
-            status_code=302
-        )
-        self.client.force_login(self.follower)
-        response = self.client.post(
+        self.client.post(
             reverse(
-                'add_comment', 
-                args=[self.following.username, self.post.id]
-            ), 
-            {'text': self.text}
-        )
-        self.assertEqual(response.status_code, 302)
-        response = self.client.get(
-            reverse(
-                'post', 
-                args=[self.following.username, self.post.id]
-            )
-        )
-        self.assertContains(response, self.text, status_code=200, html=False,)
+                "add_comment", 
+                kwargs={
+                    'username': self.user.username,
+                    'post_id': post.id
+                }), 
+            {'text': 'Comment',
+            'post': post.id,
+            'author': self.user.id
+        })
+        comment = post.comments.select_related('author').first()
+        self.assertEqual(Comment.objects.count(), 1)
+        self.assertEqual(comment.text, 'Comment')
+        self.assertEqual(comment.post, post)
+        self.assertEqual(comment.author, self.user)
