@@ -8,8 +8,6 @@ from django.shortcuts import reverse
 
 from posts.models import Post, Group, Follow, Comment
 
-import tempfile
-
 User = get_user_model()
 
 
@@ -115,13 +113,13 @@ class PostsTest(TestCase):
         ) 
         for url in urls: 
             cache.clear() 
-            res_page = self.client.get(url) 
+            result_page = self.client.get(url) 
             with self.subTest('Поста нет на странице "' + url + '"'): 
-                paginator = res_page.context.get('paginator')  
+                paginator = result_page.context.get('paginator')  
                 if paginator is not None:  
-                    result = res_page.context['page'][0]
+                    result = result_page.context['page'][0]
                 else:
-                    result = res_page.context['post'] 
+                    result = result_page.context['post'] 
                 self.assertEqual(result.text, self.post.text) 
                 self.assertEqual(result.group.id,  self.group.id) 
                 self.assertEqual(result.author.username, self.user.username) 
@@ -181,7 +179,6 @@ class SprintSixTest(TestCase):
             reverse('group_posts', args=[self.group.slug]), 
         )
         for url in urls: 
-             
             with self.subTest(url=url): 
                 response = self.client.get(url) 
                 paginator = response.context.get('paginator')  
@@ -193,7 +190,14 @@ class SprintSixTest(TestCase):
 
     def test_no_image(self):
         self.client.force_login(self.user)
-        fake_img = tempfile.NamedTemporaryFile()
+        small_gif= (
+            b"1"
+        )
+        fake_img = SimpleUploadedFile(
+            "small.gif",
+            small_gif,
+            content_type="image/gif"
+        )
         response = self.client.post(
             reverse('new_post'), 
             {'text': 'post with no imag',
@@ -202,53 +206,79 @@ class SprintSixTest(TestCase):
                 'image': fake_img
             }
         )
-        self.assertFormError(response, 'form', 'image', 'Отправленный файл пуст.')
-
-    def test_cache(self):
+        self.assertFormError(
+            response, 
+            'form', 
+            'image', 
+            'Загрузите правильное изображение. \
+Файл, который вы загрузили, поврежден или не является изображением.'
+        )
+    
+    def test_edit_image(self):
+        cache.clear()
         self.client.force_login(self.user)
-        self.client.get(reverse('index'))
+        post = Post.objects.create(
+            text="Post for edit image", 
+            group=self.group, 
+            author=self.user
+        )
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04'
+            b'\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02'
+            b'\x02\x4c\x01\x00\x3b'
+        )
+        img = SimpleUploadedFile(
+            'small.gif', 
+            small_gif,
+            content_type='image/gif'
+        )
+        self.client.post(reverse(
+            "post_edit", 
+            kwargs={
+                'username': self.user.username, 
+                'post_id': post.id
+            }),
+            {
+                'text': "Post aftr edit image",
+                'image': img
+            }
+        )
+        urls = [
+            reverse('index'), 
+            reverse('profile', args=[post.author.username]),  
+            reverse('post',  args=[post.author.username, post.pk]),  
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                response = self.client.get(url) 
+                self.assertContains(response, '<img')
+    
+    def test_cache(self):
+        cache.clear()
+        self.client.force_login(self.user)
+        first_response = self.client.get(reverse('index'))
         post_cache = Post.objects.create(
             text='Post to check cache', 
             group=self.group,
             author=self.user
         )
-        response = self.client.get(reverse('index'))
-        self.assertNotContains(response, post_cache.text)
+        second_response = self.client.get(reverse('index'))
+        self.assertEqual(first_response.content, second_response.content)
         key = make_template_fragment_key('index_page')
         cache.delete(key)
-        response = self.client.get(reverse('index'))
-        self.assertContains(response, post_cache.text)
+        third_response = self.client.get(reverse('index'))
+        self.assertNotEqual(second_response.content, third_response.content)
 
     def test_follow(self):
         self.client.force_login(self.follower)
-        Follow.objects.create(
-            user=self.follower,
-            author=self.following
-        )
-        post = Post.objects.create(
-            text='Post for follow',
-            author=self.following,
-            group=self.group
-        )
-        post.save()
-        response = self.client.get(reverse('follow_index'))
-        self.assertContains(response, post.text)
-        self.assertContains(response, post.author.username)
-
-    def test_double_follow(self):
-        self.client.force_login(self.follower)
-        url_profile_follow = reverse(
-            'profile_follow',
-            kwargs={'username': self.following.username}
-        )
-        self.client.get(url_profile_follow, follow=True)
-        self.assertEqual(Follow.objects.all().count(), 1)
-        follower=Follow.objects.get().user
-        following=Follow.objects.get().author
-        self.assertEqual(follower, self.follower)
-        self.assertEqual(following, self.following)
-        self.client.get(url_profile_follow, follow=True) 
-        self.assertEqual(Follow.objects.all().count(), 1)
+        self.client.post(reverse( 
+            'profile_follow', 
+            kwargs={'username': self.following.username} 
+        ))
+        self.assertEqual(Follow.objects.count(), 1)
+        follow = Follow.objects.first()
+        self.assertEqual(follow.author, self.following)
+        self.assertEqual(follow.user, self.follower)
 
     def test_self_follow(self):
         self.client.force_login(self.follower)
@@ -271,10 +301,12 @@ class SprintSixTest(TestCase):
             author=self.following,
             group=self.group
         )
-        post.save()
-        follow.delete()
-        response = self.client.get(reverse('follow_index'))
-        self.assertNotContains(response, post.text)
+        self.assertEqual(Follow.objects.all().count(), 1)
+        self.client.post(reverse( 
+            'profile_unfollow', 
+            kwargs={'username': self.following.username} 
+        ))
+        self.assertEqual(Follow.objects.all().count(), 0)
 
     def test_follow_index(self):
         self.client.force_login(self.follower)
@@ -283,13 +315,15 @@ class SprintSixTest(TestCase):
             author=self.following
         )
         url_follow_index = reverse('follow_index')
-        response_profile = self.client.get(url_follow_index)
-        self.assertNotContains(response_profile, 'TEST_POST')
-
-        Follow.objects.create(user_id=self.follower.id, author_id=self.following.id)
-
-        response_profile = self.client.get(url_follow_index)
-        self.assertContains(response_profile, 'TEST_POST')
+        response = self.client.get(url_follow_index)
+        self.assertNotEqual(response.context.get('post'), self.post)
+        Follow.objects.create(
+            user_id=self.follower.id, 
+            author_id=self.following.id
+        )
+        response = self.client.get(url_follow_index)
+        self.assertEqual(response.context.get('post').text, self.post.text)
+        self.assertEqual(response.context.get('post').author, self.post.author)
 
     def test_unauth_comments(self):
         self.text = 'Test comments'
@@ -298,16 +332,15 @@ class SprintSixTest(TestCase):
             group=self.group,
             author=self.user
         )
-        self.client.post(
-            reverse(
-                "add_comment", 
-                kwargs={ 
-                    'username': self.user.username,
-                    'post_id': post.id 
-                }), 
-            {'text': 'Comment',
-            'post': post.id,
-            'author': self.user.id})
+        response = self.client.get(reverse(
+            "add_comment", 
+            kwargs={ 
+                'username': self.user.username,
+                'post_id': post.id 
+            }), 
+            {'text': 'Comment'}
+        )
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(Comment.objects.count(), 0)
 
     def test_auth_comments(self):
@@ -318,17 +351,14 @@ class SprintSixTest(TestCase):
             group=self.group,
             author=self.user
         )
-        self.client.post(
-            reverse(
-                "add_comment", 
-                kwargs={
-                    'username': self.user.username,
-                    'post_id': post.id
-                }), 
-            {'text': 'Comment',
-            'post': post.id,
-            'author': self.user.id
-        })
+        self.client.post(reverse(
+            "add_comment", 
+            kwargs={
+                'username': self.user.username,
+                'post_id': post.id
+            }), 
+            {'text': 'Comment'}
+        )
         comment = post.comments.select_related('author').first()
         self.assertEqual(Comment.objects.count(), 1)
         self.assertEqual(comment.text, 'Comment')
