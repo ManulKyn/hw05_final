@@ -210,8 +210,11 @@ class SprintSixTest(TestCase):
             response, 
             'form', 
             'image', 
-            'Загрузите правильное изображение. \
-Файл, который вы загрузили, поврежден или не является изображением.'
+            (
+                'Загрузите правильное изображение. '
+                'Файл, который вы загрузили, поврежден или не является'
+                ' изображением.'
+            )
         )
     
     def test_edit_image(self):
@@ -239,20 +242,17 @@ class SprintSixTest(TestCase):
                 'post_id': post.id
             }),
             {
-                'text': "Post aftr edit image",
+                'text': "Post after edit image",
                 'image': img
             }
         )
-        urls = [
-            reverse('index'), 
-            reverse('profile', args=[post.author.username]),  
-            reverse('post',  args=[post.author.username, post.pk]),  
-        ]
-        for url in urls:
-            with self.subTest(url=url):
-                response = self.client.get(url) 
-                self.assertContains(response, '<img')
-    
+        self.assertEqual(Post.objects.count(), 1)
+
+        comment = Post.objects.all().first()
+        self.assertNotEqual(comment.text, "Post for edit image")
+        self.assertEqual(comment.text, "Post after edit image")
+        self.assertEqual(comment.author, self.user)
+
     def test_cache(self):
         cache.clear()
         self.client.force_login(self.user)
@@ -302,7 +302,7 @@ class SprintSixTest(TestCase):
             group=self.group
         )
         self.assertEqual(Follow.objects.all().count(), 1)
-        self.client.post(reverse( 
+        self.client.get(reverse( 
             'profile_unfollow', 
             kwargs={'username': self.following.username} 
         ))
@@ -316,7 +316,7 @@ class SprintSixTest(TestCase):
         )
         url_follow_index = reverse('follow_index')
         response = self.client.get(url_follow_index)
-        self.assertNotEqual(response.context.get('post'), self.post)
+        self.assertEqual(response.context.get('post'), None)
         Follow.objects.create(
             user_id=self.follower.id, 
             author_id=self.following.id

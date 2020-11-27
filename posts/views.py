@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect, render
@@ -44,6 +46,8 @@ def new_post(request):
     new_post = form.save(commit=False)
     new_post.author = request.user
     new_post.save()
+    key = make_template_fragment_key('index_page')
+    cache.delete(key)
     return redirect('index')
 
 
